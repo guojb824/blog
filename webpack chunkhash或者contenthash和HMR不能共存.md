@@ -4,7 +4,7 @@
 
 Webpack-dev-server构建失败，报以下错误：
 
-![1562400633096](C:\Users\Administrator\AppData\Roaming\Typora\typora-user-images\1562400633096.png)
+![1562400633096](D:\project\blog\images/chunkhash构建失败.png)
 
 ###### webpack配置代码
 
@@ -34,7 +34,7 @@ module.exports={
 
 https://github.com/webpack/webpack/issues/2393
 
-![1562400865644](C:\Users\Administrator\AppData\Roaming\Typora\typora-user-images\1562400865644.png)
+![1562400865644](D:\project\blog\images/webpack issue.png)
 
 意思就是，chunkhash和HMR不能共存
 
@@ -42,7 +42,7 @@ https://github.com/webpack/webpack/issues/2393
 
 https://github.com/webpack/webpack-dev-server/issues/377
 
-![1562400939975](C:\Users\Administrator\AppData\Roaming\Typora\typora-user-images\1562400939975.png)
+![1562400939975](D:\project\blog\images\webpack-dev-server issue.png)
 
 ###### 问题根因
 
