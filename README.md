@@ -1,37 +1,14 @@
-## Welcome to GitHub Pages
+## 个人博客
 
-You can use the [editor on GitHub](https://github.com/guojb824/blog/edit/master/README.md) to maintain and preview the content for your website in Markdown files.
+本博客用于记录实际工作中遇到过的问题和解决办法，以及对前端技术栈的理解。
 
-Whenever you commit to this repository, GitHub Pages will run [Jekyll](https://jekyllrb.com/) to rebuild the pages in your site, from the content in your Markdown files.
+### 2019
 
-### Markdown
+#### July
 
-Markdown is a lightweight and easy-to-use syntax for styling your writing. It includes conventions for
+- ##### July 7,2019 **»** 
 
-```markdown
-Syntax highlighted code block
+  [webpack chunkhash/contenthash和HMR不能共存]: https://github.com/guojb824/blog/blob/master/webpack%20chunkhash%E6%88%96%E8%80%85contenthash%E5%92%8CHMR%E4%B8%8D%E8%83%BD%E5%85%B1%E5%AD%98.md
 
-# Header 1
-## Header 2
-### Header 3
+  
 
-- Bulleted
-- List
-
-1. Numbered
-2. List
-
-**Bold** and _Italic_ and `Code` text
-
-[Link](url) and ![Image](src)
-```
-
-For more details see [GitHub Flavored Markdown](https://guides.github.com/features/mastering-markdown/).
-
-### Jekyll Themes
-
-Your Pages site will use the layout and styles from the Jekyll theme you have selected in your [repository settings](https://github.com/guojb824/blog/settings). The name of this theme is saved in the Jekyll `_config.yml` configuration file.
-
-### Support or Contact
-
-Having trouble with Pages? Check out our [documentation](https://help.github.com/categories/github-pages-basics/) or [contact support](https://github.com/contact) and we’ll help you sort it out.
