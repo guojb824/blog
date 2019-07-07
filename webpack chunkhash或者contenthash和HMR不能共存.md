@@ -4,7 +4,7 @@
 
 Webpack-dev-server构建失败，报以下错误：
 
-![image](https://github.com/guojb824/blog/tree/master/images/chunkhash构建失败.png)
+![image](/images/chunkhash构建失败.png)
 
 ###### webpack配置代码
 
