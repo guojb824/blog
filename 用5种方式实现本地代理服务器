@@ -1,0 +1,327 @@
+前端本地开发时，除了本地mock数据，往往还需要和后台联调接口。最简单的联调接口的方式就是，利用本地的Node.js server将请求转发到后台的本地环境。这样，前后台修改了代码后，可以马上看到效果，而不需要重新刷版本到环境上。
+
+下面就来介绍一下，如何使用Node.js实现一个代理服务器。
+
+#### 1.使用Node.js原生的http(s).request实现
+
+思路：本地的Node.js server收到浏览器发出的请求后，分别获取到请求头和请求体，再使用http(s).request向对应的后台server发送请求。
+
+
+http(s).request的API如下：
+[http.request](http://nodejs.cn/api/http.html#http_http_request_options_callback)
+
+有几个事件：
+
+* data
+
+    每当有一个字符的响应数据返回，则触发一次data事件。如果需要保存响应的数据，则需要事先定义一个缓冲变量buffer，每触发一次data事件，则往buffer变量中追加数据（类似字符串拼接的方式）
+* end
+
+    response成功结束
+    
+* error
+
+    遇到错误
+
+由于这种事件回调的方式会和业务逻辑强耦合，容易形成回调地狱。为了将这部分逻辑独立出来，使用一个promise将这部分逻辑进行封装，便于外部获取。
+
+代码如下：
+
+```javascript
+const express = require('express');
+const bodyParser = require('body-parser');
+const fs = require('fs');
+const https = require('https');
+const config = require('./config/config');
+const token = '666'; // 这个token是通过IAM鉴权后台得到的，和本文关系不大。为了简便，暂时写死；实际场景中如果需要获取，可以通过调接口异步地获取。
+
+const app = express();
+app.use(bodyParser.json());
+// 这里用的是HTTPS协议，所以才需要生成证书。如果用HTTP协议，则不需要。
+const privateKey = fs.readFileSync('./cert/private.pem', 'utf8');
+const certificate = fs.readFileSync('./cert/file.crt', 'utf8');
+const publicKey = fs.readFileSync('./cert/csr.pem', 'utf8');
+
+function getProxyByHttps(token, req) {
+    return new Promise((resolve, reject) => {
+        const options = {
+            hostname: '192.168.1.101',
+            port: 7443,
+            path: req.url,
+            method: req.method,
+            headers: {
+                // 后台接口需要的请求头就在这里添加
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-Auth-Token': token
+            },
+            rejectUnauthorized: false
+        };
+        const request = https.request(options, (res) => {
+            let buffer = '';
+            res.on('data', data => {
+                buffer += data;
+            });
+            res.on('end', () => {
+                try {
+                    resolve(JSON.parse(buffer)); // 返回的数据是原始的字符串形式的，需要解析成JSON，才可以返回给浏览器
+                } catch (err) {
+                    reject(err);
+                }
+            });
+        });
+        request.on('error', err => {
+            reject(err);
+        });
+        request.end();
+    });
+}
+
+app.use('/rest', async (req, res) => {
+    try {
+        const result = await getProxyByHttps(token, req);
+        res.send(result);
+    } catch (err) {
+        console.error(err);
+    }
+});
+// 加第二个参数0.0.0.0是为了允许从其他IP访问。如果只需要在本地访问，则0.0.0.0可以不加
+app.listen(3000, '0.0.0.0');
+```
+
+总结：
+
+这种方式的优点如下：
+1.http(s).request是Nodejs原生的API，不需要引入任何中间件来做转发
+
+2.可以在其他机器上调用接口，不限于本地调用。e.g. 可以把本地的IP发给其他人，他们在各自的电脑上也可以访问本地的server。
+
+缺点：
+
+需要在事件回调中自行拼装响应数据，代码比较繁琐
+
+#### 2. 使用request中间件来实现
+
+request简介：request是封装了http.request而来的一个三方件，也是使用http.request向后台server发送数据，
+
+思路同上
+
+代码和1类似：
+
+```javascript
+const express = require('express');
+const bodyParser = require('body-parser');
+const fs = require('fs');
+const request = require('request');
+const config = require('./config/config');
+const token = '666'; // 这个token是通过IAM鉴权后台得到的，和本文关系不大。为了简便，暂时写死；实际场景中如果需要获取，可以通过调接口异步地获取。
+
+const app = express();
+app.use(bodyParser.json());
+// 这里用的是HTTPS协议，所以才需要生成证书。如果用HTTP协议，则不需要。
+const privateKey = fs.readFileSync('./cert/private.pem', 'utf8');
+const certificate = fs.readFileSync('./cert/file.crt', 'utf8');
+const publicKey = fs.readFileSync('./cert/csr.pem', 'utf8');
+
+function getProxyByRequest(token, req) {
+    const options = {
+        url: 'https://192.168.1.101:7443' + req.url,
+        method: req.method,
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-Auth-Token': token
+        },
+        body: JSON.stringify(req.body),
+        strictSSL: false,
+    };
+    return new Promise((resolve, reject) => {
+        let buffer = '';
+        request(options, (error, response, body) => {
+        }).on('data', (data) => {
+            buffer += data;
+        }).on('response', (response) => {
+            // resolve(buffer);
+        }).on('end', () => {
+            try {
+                resolve(JSON.parse(buffer));
+            } catch (err) {
+                reject(err);
+            }
+
+        }).on('error', (err) => {
+            reject(err);
+        });
+    });
+}
+
+app.use('/rest', getProxy(token));
+// 加第二个参数0.0.0.0是为了允许从其他IP访问。如果只需要在本地访问，则0.0.0.0可以不加
+app.listen(3000, '0.0.0.0');
+```
+
+同样需要拼接响应数据
+
+有没有不需要拼接响应数据的方式呢？下面就介绍几种httpclient中间件：
+
+
+#### 3. 采用Axios实现
+
+Axios是一个 [基于promise的http client库](https://github.com/axios/axios)。
+
+代码如下：
+
+```javascript
+const express = require('express');
+const bodyParser = require('body-parser');
+const fs = require('fs');
+const axios = require('axios');
+const config = require('./config/config');
+const token = '666'; // 这个token是通过IAM鉴权后台得到的，和本文关系不大。为了简便，暂时写死；实际场景中如果需要获取，可以通过调接口异步地获取。
+
+const app = express();
+app.use(bodyParser.json());
+// 这里用的是HTTPS协议，所以才需要生成证书。如果用HTTP协议，则不需要。
+const privateKey = fs.readFileSync('./cert/private.pem', 'utf8');
+const certificate = fs.readFileSync('./cert/file.crt', 'utf8');
+const publicKey = fs.readFileSync('./cert/csr.pem', 'utf8');
+
+function getProxyByAxios(token, req) {
+    const instance = axios.create({
+        baseURL: 'https://192.168.1.101:7443/',
+        headers: { 'X-Auth-Token': token }
+    });
+    return instance.request({
+        url: req.url,
+        method: req.method,
+        headers: req.headers,
+        data: req.body,
+        httpsAgent: new https.Agent({ rejectUnauthorized: false }) // 由于本地的server是使用自前面的https证书搭建的，为了避免未认证的问题，需要设置此项
+    });
+}
+
+app.use('/rest', async (req, res) => {
+    try {
+        const result = await getProxyByAxios(token, req);
+        res.send(result.data);
+    } catch (err) {
+        console.error(err);
+    }
+});
+// 加第二个参数0.0.0.0是为了允许从其他IP访问。如果只需要在本地访问，则0.0.0.0可以不加
+app.listen(3000, '0.0.0.0');
+```
+
+注意：axios返回的promise resolve之后，得到的是一个包含响应数据的对象，响应数据在data属性中
+
+#### 4. 使用superagent实现
+
+superagent也是一个http client库，详见：[github仓库](https://github.com/visionmedia/superagent)
+
+思路和3类似
+
+代码如下：
+
+```javascript
+const express = require('express');
+const bodyParser = require('body-parser');
+const fs = require('fs');
+const axios = require('axios');
+const config = require('./config/config');
+const token = '666'; // 这个token是通过IAM鉴权后台得到的，和本文关系不大。为了简便，暂时写死；实际场景中如果需要获取，可以通过调接口异步地获取。
+
+const app = express();
+app.use(bodyParser.json());
+// 这里用的是HTTPS协议，所以才需要生成证书。如果用HTTP协议，则不需要。
+const privateKey = fs.readFileSync('./cert/private.pem', 'utf8');
+const certificate = fs.readFileSync('./cert/file.crt', 'utf8');
+const publicKey = fs.readFileSync('./cert/csr.pem', 'utf8');
+
+function getProxyByAgent(token, req) {
+    const options = {
+        hostname: '127.0.0.1',
+        port: 3001,
+        path: '/',
+        method: req.method,
+        key: privateKey,
+        cert: publicKey
+    };
+    options.agent = new https.Agent(options);
+    return superagent
+        .agent(options.agent)
+        .post('https://127.0.0.1:7443' + req.url)
+        .trustLocalhost()  // https://visionmedia.github.io/superagent/
+        .send(req.body) // sends a JSON post body
+        .set('X-Auth-Token', token)
+        // .key(privateKey)
+        // .cert(certificate)
+        // .set('accept', 'json')
+        ;
+}
+
+app.use('/rest', async (req, res) => {
+    try {
+        const result = await getProxyByAgent(token, req);
+        res.send(result);
+    } catch (err) {
+        console.error(err);
+    }
+});
+// 加第二个参数0.0.0.0是为了允许从其他IP访问。如果只需要在本地访问，则0.0.0.0可以不加
+app.listen(3000, '0.0.0.0');
+```
+缺点：由于superagent对https支持不好（详见： [issue](https://visionmedia.github.io/superagent/)）
+
+只能支持转发到本地的server，这在实际开发中基本不可行。
+
+#### 5. 使用express-http-proxy实现
+
+简介：express-http-proxy是express的http-proxy插件，可以使用express开启一个代理服务器。
+这个中间件对外暴露了几个事件钩子，可以根据需要选择适当的钩子函数进行业务逻辑的处理。所有的配置项详见 [Github](https://github.com/villadora/express-http-proxy)
+
+```javascript
+const express = require('express');
+const bodyParser = require('body-parser');
+const fs = require('fs');
+const expressProxy = require('express-http-proxy');
+const config = require('./config/config');
+const token = '666'; // 这个token是通过IAM鉴权后台得到的，和本文关系不大。为了简便，暂时写死；实际场景中如果需要获取，可以通过调接口异步地获取。
+
+const app = express();
+app.use(bodyParser.json());
+// 这里用的是HTTPS协议，所以才需要生成证书。如果用HTTP协议，则不需要。
+const privateKey = fs.readFileSync('./cert/private.pem', 'utf8');
+const certificate = fs.readFileSync('./cert/file.crt', 'utf8');
+const publicKey = fs.readFileSync('./cert/csr.pem', 'utf8');
+
+function getProxy(token) {
+    return expressProxy('https://192.168.1.101:7443', {
+        proxyReqPathResolver(req) {
+            return req.url;
+        },
+        proxyReqOptDecorator(proxyReqOpts, srcReq) {
+            proxyReqOpts.rejectUnauthorized = false;
+            proxyReqOpts.headers['X-Auth-Token'] = token;
+            return proxyReqOpts;
+        },
+        proxyReqBodyDecorator(bodyContent, srcReq) {
+            return bodyContent;
+        }
+    })
+}
+
+app.use('/rest', async (req, res) => {
+    try {
+        const result = await getProxyByHttps(token, req);
+        res.send(result);
+    } catch (err) {
+        console.error(err);
+    }
+});
+// 加第二个参数0.0.0.0是为了允许从其他IP访问。如果只需要在本地访问，则0.0.0.0可以不加
+app.listen(3000, '0.0.0.0');
+```
+
+
+
+
